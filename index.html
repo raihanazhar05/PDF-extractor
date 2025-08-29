@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Timesheet Extractor</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
+    th { background: #f3f4f6; text-align: left; }
+    .pdf { width: 100%; height: 80vh; border: 1px solid #ddd; }
+    .controls { margin-bottom: 12px; }
+    .error { color: #b91c1c; }
+    #empName { margin: 8px 0; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Weekly Timesheet Extractor</h1>
+  <div class="controls">
+    <input type="file" id="file" accept="application/pdf" />
+    <button id="btn">Extract</button>
+    <span id="msg" class="error"></span>
+  </div>
+  <div class="grid">
+    <div>
+      <h3>Extracted Records</h3>
+      <p id="empName"></p>
+      <table id="results">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Day</th>
+            <th>Hours</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div>
+      <h3>PDF Preview</h3>
+      <object id="pdf" class="pdf" type="application/pdf"></object>
+    </div>
+  </div>
+
+  <script>
+  const fileInput = document.getElementById('file');
+  const btn = document.getElementById('btn');
+  const msg = document.getElementById('msg');
+  const pdf = document.getElementById('pdf');
+  const tbody = document.querySelector('#results tbody');
+  const empNameLine = document.getElementById('empName');
+
+  let currentPdfUrl = null;
+
+  function isPdfFile(f) {
+    if (!f) return false;
+    const byType = typeof f.type === 'string' && f.type.toLowerCase() === 'application/pdf';
+    const byName = typeof f.name === 'string' && f.name.toLowerCase().endsWith('.pdf');
+    return byType || byName;
+  }
+
+  function setRows(records) {
+    tbody.innerHTML = '';
+    empNameLine.textContent = '';
+
+    if (!records || records.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="3" style="text-align:center; color:#666;">No records found.</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    // Show employee name once above table
+    const empName = records[0].name || '';
+    if (empName) {
+      empNameLine.textContent = `Employee Name: ${empName}`;
+    }
+
+    // Populate rows without name column
+    for (const r of records) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.date || ''}</td>
+        <td>${r.day || ''}</td>
+        <td>${r.hours || ''}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function previewPdf(file) {
+    if (currentPdfUrl) {
+      URL.revokeObjectURL(currentPdfUrl);
+      currentPdfUrl = null;
+    }
+    if (!isPdfFile(file)) {
+      pdf.removeAttribute('data');
+      return;
+    }
+    currentPdfUrl = URL.createObjectURL(file);
+    pdf.data = currentPdfUrl;
+  }
+
+  btn.setAttribute('type', 'button');
+
+  btn.addEventListener('click', async () => {
+    msg.textContent = '';
+    const fileList = fileInput.files;
+    const file = fileList && fileList.length > 0 ? fileList[0] : null;
+
+    if (!isPdfFile(file)) {
+      msg.textContent = 'Please select a PDF file first.';
+      setRows([]);
+      previewPdf(null);
+      return;
+    }
+
+    previewPdf(file);
+
+    const form = new FormData();
+    form.append('file', file, file.name || 'upload.pdf');
+
+    try {
+      btn.disabled = true;
+      msg.textContent = 'Extracting...';
+      const res = await fetch('/extract', { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        msg.textContent = data.error || `Extraction failed (HTTP ${res.status}).`;
+        setRows([]);
+        return;
+      }
+      setRows(Array.isArray(data.records) ? data.records : []);
+      msg.textContent = '';
+    } catch (e) {
+      msg.textContent = (e && e.message) ? e.message : 'Network error.';
+      setRows([]);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    const fileList = fileInput.files;
+    const file = fileList && fileList.length > 0 ? fileList[0] : null;
+    previewPdf(file);
+    setRows([]); // Clear previous results on new file selection
+    msg.textContent = isPdfFile(file) ? '' : 'Please choose a PDF file (.pdf).';
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
+  });
+</script>
+</body>
+</html>
