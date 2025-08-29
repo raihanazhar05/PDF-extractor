@@ -1,5 +1,6 @@
 import io
 import re
+import os
 from typing import List, Dict
 from flask import Flask, request, jsonify, send_from_directory
 import pdfplumber
@@ -103,10 +104,7 @@ def extract_records(file_stream: io.BytesIO) -> List[Dict]:
                         reg_hours, ot_hours = None, None
 
                         if len(time_indices) >= 1:
-                            # Choose OUT index: prefer second time token if available, otherwise first
                             out_idx = time_indices[1] if len(time_indices) >= 2 else time_indices[0]
-
-                            # Look for numeric tokens AFTER the OUT time
                             numeric_after = []
                             for tok in tokens[out_idx + 1:]:
                                 tok_clean = tok.strip().strip(",.")
@@ -114,13 +112,11 @@ def extract_records(file_stream: io.BytesIO) -> List[Dict]:
                                     numeric_after.append(tok_clean.replace(",", "."))
                                     if len(numeric_after) >= 2:
                                         break
-
                             if numeric_after:
                                 reg_hours = numeric_after[0]
                             if len(numeric_after) >= 2:
                                 ot_hours = numeric_after[1]
                         else:
-                            # Fallback: scan tokens after Date/Day for the first numeric tokens
                             numeric_tokens = []
                             for tok in tokens:
                                 tok_clean = tok.strip().strip(",.")
@@ -179,4 +175,5 @@ def extract():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    port = int(os.environ.get("PORT", 8000))  # Railway uses $PORT
+    app.run(host="0.0.0.0", port=port, debug=True)
